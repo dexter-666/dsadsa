@@ -1,0 +1,151 @@
+// TODO(geckolib5-port): dev.architectury.loom 1.11.458 / architectury-plugin 3.4.164 predate Minecraft
+// 26.2 in this port's authoring environment (no internet access there to check newer releases).
+// If the build fails resolving Minecraft 26.2 mappings/metadata, bump these plugin versions first.
+plugins {
+    id 'dev.architectury.loom' version '1.11.458' apply false
+    id 'architectury-plugin' version '3.4.164'
+    id 'com.gradleup.shadow' version '8.3.6' apply false
+    id 'me.modmuss50.mod-publish-plugin' version '1.1.0'
+}
+
+architectury {
+    minecraft = project.minecraft_version
+}
+
+publishMods {
+    type = ALPHA
+
+    def curseforgeCommon = curseforgeOptions {
+        accessToken = providers.environmentVariable('CURSEFORGE_TOKEN')
+        projectId = rootProject.curseforge_project_id
+        minecraftVersions.add(rootProject.minecraft_version)
+        clientRequired = true
+        serverRequired = true
+    }
+
+    def modrinthCommon = modrinthOptions {
+        accessToken = providers.environmentVariable('MODRINTH_TOKEN')
+        projectId = rootProject.modrinth_project_id
+        minecraftVersions.add(rootProject.minecraft_version)
+    }
+
+    curseforge('curseforgeFabric') {
+        from curseforgeCommon
+        file project(':fabric')
+        modLoaders.add('fabric')
+        requires('fabric-api', 'geckolib')
+    }
+
+    curseforge('curseforgeForge') {
+        from curseforgeCommon
+        file project(':forge')
+        modLoaders.add('forge')
+        requires('geckolib')
+    }
+
+    modrinth('modrinthFabric') {
+        from modrinthCommon
+        file project(':fabric')
+        modLoaders.add('fabric')
+        requires('fabric-api', 'geckolib')
+    }
+
+    modrinth('modrinthForge') {
+        from modrinthCommon
+        file project(':forge')
+        modLoaders.add('forge')
+        requires('geckolib')
+    }
+}
+
+allprojects {
+    group = rootProject.mod_group_id
+    version = rootProject.mod_version
+}
+
+subprojects {
+    apply plugin: 'dev.architectury.loom'
+    apply plugin: 'architectury-plugin'
+    apply plugin: 'maven-publish'
+
+    base {
+        // Set up a suffixed format for the mod jar names, e.g. `example-fabric`.
+        archivesName = "$rootProject.mod_id-$project.name"
+    }
+
+    repositories {
+        mavenCentral()
+        maven { url = 'https://maven.minecraftforge.net/' }
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://libraries.minecraft.net/' }
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        maven {
+            name = "Progwml6's maven"
+            url = "https://dvs1.progwml6.com/files/maven/"
+        }
+        maven {
+            name = "Jared's maven"
+            url = "https://maven.blamejared.com/"
+        }
+        maven {
+            name = "ModMaven"
+            url = "https://modmaven.dev"
+        }
+        maven {
+            name = "TerraformersMC"
+            url = "https://maven.terraformersmc.com/releases/"
+        }
+        // TODO(geckolib5-port): local fallback so GeckoLib 5.5.5 (com.geckolib:geckolib-fabric-26.2:5.5.5)
+        // resolves from the jar you supplied, bundled under <project>/libs. Safe to remove once/if
+        // GeckoLib 5 is available from a real Maven repo you can reach.
+        flatDir { dirs 'libs' }
+    }
+
+    loom {
+        silentMojangMappingsLicense()
+    }
+
+    dependencies {
+        minecraft "net.minecraft:minecraft:$rootProject.minecraft_version"
+    }
+
+    // TODO(geckolib5-port): bumped 17 -> 25 because GeckoLib 5.5.5's fabric.mod.json requires "java": ">=25".
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+
+        withSourcesJar()
+
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        it.options.release = 25
+    }
+
+    tasks.withType(JavaExec).configureEach {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
+
+    tasks.named('processResources') {
+        exclude('.cache/**')
+    }
+
+    // Configure Maven publishing.
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                artifactId = base.archivesName.get()
+                from components.java
+            }
+        }
+        // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+        repositories {
+
+        }
+    }
+}

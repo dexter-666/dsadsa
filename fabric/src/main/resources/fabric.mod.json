@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "saintsdragons",
+  "version": "${version}",
+  "name": "Saint's Dragons",
+  "authors": [
+    "Leon Saint"
+  ],
+  "description": "i can write whatever i want. what are you gonna do? throw shoes at me?",
+  "license": "MIT",
+  "icon": "assets/saintsdragons/saintsdragons.png",
+  "contact": {
+    "homepage": "https://raevyx.miraheze.org/wiki/Main_Page",
+    "sources": "https://github.com/LilRicefield/saints-dragons",
+    "issues": "https://github.com/LilRicefield/saints-dragons/issues"
+  },
+  "entrypoints": {
+    "main": [
+      "com.leon.saintsdragons.fabric.SaintsDragonsFabric"
+    ],
+    "client": [
+      "com.leon.saintsdragons.fabric.SaintsDragonsFabricClient"
+    ],
+    "modmenu": [
+      "com.leon.saintsdragons.fabric.SaintsDragonsModMenuIntegration"
+    ]
+  },
+  "_comment_geckolib5_port": "emi/jei_mod_plugin/jade entrypoints removed - their compat source files are excluded from compilation in common/build.gradle and fabric/build.gradle until MC-26.2-compatible EMI/JEI/Jade dependencies are found. Restore entrypoints + build.gradle excludes together.",
+  "mixins": [
+    "saintsdragons.mixins.json",
+    "saintsdragons-hooks.mixins.json"
+  ],
+  "accessWidener": "saintsdragons.accesswidener",
+  "depends": {
+    "fabricloader": ">=${fabric_loader_version}",
+    "fabric-api": ">=${fabric_api_version}",
+    "minecraft": "${minecraft_version}",
+    "geckolib": ">=5.5.5"
+  },
+  "suggests": {
+    "cloth-config": ">=${cloth_config_version}"
+  }
+}

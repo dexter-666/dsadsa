@@ -1,0 +1,42 @@
+name: Build (MC 26.2 / GeckoLib 5 port)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GeckoLib 5.5.5 requires Java 25 (see fabric.mod.json "java": ">=25")
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build fabric jar
+        run: ./gradlew :fabric:build --stacktrace
+
+      - name: Upload build logs (always, for debugging TODO(geckolib5-port) spots)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-reports
+          path: |
+            fabric/build/reports
+            common/build/reports
+          if-no-files-found: ignore
+
+      - name: Upload fabric mod jar
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saintsdragons-fabric-mc26.2
+          path: fabric/build/libs/*.jar

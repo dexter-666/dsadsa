@@ -1,0 +1,239 @@
+package com.leon.saintsdragons.forge.client.event;
+
+import com.leon.saintsdragons.client.camera.ClientCameraImpulse;
+import com.leon.saintsdragons.client.camera.DragonFovEffects;
+import com.leon.saintsdragons.client.camera.DragonRideCameraController;
+import com.leon.saintsdragons.client.camera.DragonDiveCameraWobble;
+import com.leon.saintsdragons.client.init.CommonClientLifecycleEvents;
+import com.leon.saintsdragons.common.SaintsDragonsCommon;
+import com.leon.saintsdragons.forge.client.camera.CameraLeanData;
+import com.leon.saintsdragons.forge.client.camera.DragonCameraState;
+import com.leon.saintsdragons.forge.platform.ForgeClientConfig;
+import com.leon.saintsdragons.server.entity.base.RideableDragonBase;
+import com.leon.saintsdragons.server.entity.dragons.atroxiia.Atroxiia;
+import com.leon.saintsdragons.server.entity.dragons.cindervane.Cindervane;
+import com.leon.saintsdragons.server.entity.dragons.ignivorus.Ignivorus;
+import com.leon.saintsdragons.server.entity.dragons.raevyx.Raevyx;
+import com.leon.saintsdragons.server.entity.dragons.stegonaut.Stegonaut;
+import com.leon.saintsdragons.server.entity.dragons.varasuchus.Varasuchus;
+import com.leon.saintsdragons.server.entity.dragons.volitans.Volitans;
+import com.leon.saintsdragons.server.entity.interfaces.ShakesScreen;
+import net.minecraft.client.CameraType;
+import net.minecraft.client.Minecraft;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.phys.AABB;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ViewportEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.fml.common.Mod;
+
+@Mod.EventBusSubscriber(modid = SaintsDragonsCommon.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
+public class ClientEventHandler {
+    private static final double[] randomTremorOffsets = new double[3];
+
+    // Raevyx beam camera state
+    private static boolean wasBeaming = false;
+    private static CameraType previousPerspective = null;
+    private static float beamCameraForward = 0.0f;
+    private static float beamCameraUp = 0.0f;
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onComputeFov(ViewportEvent.ComputeFov event) {
+        event.setFOV(DragonFovEffects.apply(event.getFOV(), (float) event.getPartialTick()));
+    }
+
+    @SubscribeEvent
+    public static void onComputeCamera(ViewportEvent.ComputeCameraAngles event) {
+        Entity player = Minecraft.getInstance().getCameraEntity();
+        if (player == null) return;
+        if (!applyFirstPersonDragonCamera(player, event)) {
+            CameraLeanData.reset();
+            DragonCameraState.clearRoll();
+        }
+        Entity vehicle = player.getVehicle();
+        handleRaevyxBeamCamera(event, vehicle);
+
+        if (event.getCamera().isDetached()) {
+            if (!applyDetachedDragonCamera(event, vehicle)) {
+                DragonRideCameraController.reset();
+            }
+        } else if (!player.isPassenger() || !DragonRideCameraController.supports(vehicle)) {
+            DragonRideCameraController.reset();
+        }
+
+        applyDiveCameraWobble(event, vehicle);
+
+        double shakeDistanceScale = 64.0;
+        double distance = Double.MAX_VALUE;
+        // Screen shake system
+        float tremorAmount = 0.0F; // Reset tremor amount each frame
+
+        AABB aabb = player.getBoundingBox().inflate(shakeDistanceScale);
+        var level = Minecraft.getInstance().level;
+        if (level == null) return;
+
+        for (Mob screenShaker : level.getEntitiesOfClass(Mob.class, aabb, (mob -> mob instanceof ShakesScreen))) {
+            ShakesScreen shakesScreen = (ShakesScreen) screenShaker;
+            if (shakesScreen.canFeelShake(player) && screenShaker.distanceTo(player) < distance) {
+                distance = screenShaker.distanceTo(player);
+                float shakeAmount = shakesScreen.getScreenShakeAmount((float) event.getPartialTick());
+                tremorAmount = Math.min((1F - (float) Math.min(1, distance / shakesScreen.getShakeDistance())) * Math.max(shakeAmount, 0F), 2.0F);
+            }
+        }
+
+        if (tremorAmount > 0) {
+            // Generate random offsets for camera movement
+            double intensity = tremorAmount * Minecraft.getInstance().options.screenEffectScale().get();
+            event.getCamera().move(randomTremorOffsets[0] * 0.2F * intensity,
+                    randomTremorOffsets[1] * 0.2F * intensity,
+                    randomTremorOffsets[2] * 0.5F * intensity);
+
+            // Update random offsets for next frame
+            randomTremorOffsets[0] = (Math.random() - 0.5) * 2.0;
+            randomTremorOffsets[1] = (Math.random() - 0.5) * 2.0;
+            randomTremorOffsets[2] = (Math.random() - 0.5) * 2.0;
+        }
+
+        ClientCameraImpulse.Offset impulse = ClientCameraImpulse.sample((float) event.getPartialTick());
+        if (impulse.active()) {
+            event.getCamera().move(impulse.forward(), impulse.vertical(), impulse.lateral());
+        }
+    }
+
+    private static void applyDiveCameraWobble(ViewportEvent.ComputeCameraAngles event, Entity vehicle) {
+        if (!ForgeClientConfig.DIVE_CAMERA_WOBBLE_ENABLED.get()) {
+            return;
+        }
+        if (vehicle instanceof Raevyx raevyx && raevyx.isBeaming()
+                && ForgeClientConfig.isRaevyxBeamFirstPersonEnabled()) {
+            return;
+        }
+
+        DragonDiveCameraWobble.Output wobble = DragonDiveCameraWobble.get(vehicle, (float) event.getPartialTick());
+        if (!wobble.active()) {
+            return;
+        }
+
+        event.setYaw(event.getYaw() + wobble.yawDegrees());
+        event.setPitch(Mth.clamp(event.getPitch() + wobble.pitchDegrees(), -90.0F, 90.0F));
+        event.setRoll(event.getRoll() + wobble.rollDegrees());
+    }
+
+    private static void handleRaevyxBeamCamera(ViewportEvent.ComputeCameraAngles event, Entity vehicle) {
+        // Disabling the override or dismounting releases it just like ending the beam.
+        boolean isBeaming = ForgeClientConfig.isRaevyxBeamFirstPersonEnabled()
+                && vehicle instanceof Raevyx raevyx && raevyx.isBeaming();
+        Minecraft mc = Minecraft.getInstance();
+        if (isBeaming && !wasBeaming) {
+            previousPerspective = mc.options.getCameraType();
+            mc.options.setCameraType(CameraType.FIRST_PERSON);
+            wasBeaming = true;
+        } else if (!isBeaming && wasBeaming) {
+            if (previousPerspective != null) {
+                mc.options.setCameraType(previousPerspective);
+                previousPerspective = null;
+            }
+            wasBeaming = false;
+            beamCameraForward = 0.0f;
+            beamCameraUp = 0.0f;
+        }
+
+        if (!isBeaming) {
+            return;
+        }
+
+        float targetForward = 7.5f;
+        float targetUp = -2.0f;
+        float blendRate = 0.2f;
+        beamCameraForward += (targetForward - beamCameraForward) * blendRate;
+        beamCameraUp += (targetUp - beamCameraUp) * blendRate;
+        event.getCamera().move(beamCameraForward, 0, 0);
+        event.getCamera().move(0, -beamCameraUp, 0);
+    }
+
+    private static boolean applyDetachedDragonCamera(ViewportEvent.ComputeCameraAngles event, Entity vehicle) {
+        if (!DragonRideCameraController.supports(vehicle)) {
+            return false;
+        }
+
+        if (vehicle instanceof Raevyx raevyx && raevyx.isBeaming()
+                && ForgeClientConfig.isRaevyxBeamFirstPersonEnabled()) {
+            return false;
+        }
+
+        DragonRideCameraController.CameraOutput output =
+                DragonRideCameraController.update(vehicle, (float) event.getPartialTick());
+        event.getCamera().move(-event.getCamera().getMaxZoom(output.zoom()), 0, 0);
+        double lateralShift = isThirdPersonBankingCameraEnabled() ? output.lateralShift() : 0.0D;
+        event.getCamera().move(0, output.verticalShift(), lateralShift);
+        event.setPitch(Mth.clamp(event.getPitch() + output.pitchOffset(), -90.0f, 90.0f));
+        return true;
+    }
+
+    @SubscribeEvent
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        CommonClientLifecycleEvents.bootstrap();
+        CommonClientLifecycleEvents.onEndClientTick(Minecraft.getInstance());
+    }
+
+    private static boolean applyFirstPersonDragonCamera(Entity player, ViewportEvent.ComputeCameraAngles event) {
+        if (event.getCamera().isDetached()) {
+            return false;
+        }
+
+        Entity vehicle = player.getVehicle();
+        if (!(vehicle instanceof RideableDragonBase dragon) || !usesFirstPersonDragonCamera(dragon)) {
+            return false;
+        }
+
+        if (!isFirstPersonBankingCameraEnabled()) {
+            CameraLeanData.reset();
+            DragonCameraState.clearRoll();
+            return true;
+        }
+
+        if (dragon instanceof Raevyx raevyx && raevyx.isBeaming()
+                && ForgeClientConfig.isRaevyxBeamFirstPersonEnabled()) {
+            CameraLeanData.reset();
+            DragonCameraState.clearRoll();
+            return true;
+        }
+        if (!usesAerialBankingCamera(dragon)) {
+            CameraLeanData.reset();
+            DragonCameraState.clearRoll();
+            return true;
+        }
+
+        event.setRoll(event.getRoll() + DragonCameraState.getCurrentRoll());
+        return true;
+    }
+
+    private static boolean usesFirstPersonDragonCamera(RideableDragonBase dragon) {
+        return com.leon.saintsdragons.client.renderer.DragonSeatAnchoredCamera.supports(dragon);
+    }
+
+    private static boolean isFirstPersonBankingCameraEnabled() {
+        return ForgeClientConfig.FIRST_PERSON_BANKING_CAMERA_ENABLED == null
+                || ForgeClientConfig.FIRST_PERSON_BANKING_CAMERA_ENABLED.get();
+    }
+
+    private static boolean isThirdPersonBankingCameraEnabled() {
+        return ForgeClientConfig.THIRD_PERSON_BANKING_CAMERA_ENABLED == null
+                || ForgeClientConfig.THIRD_PERSON_BANKING_CAMERA_ENABLED.get();
+    }
+
+    private static boolean usesAerialBankingCamera(RideableDragonBase dragon) {
+        return dragon.isFlying()
+                || dragon.isTakeoff()
+                || dragon.isLanding()
+                || dragon.isHovering();
+    }
+}
+
