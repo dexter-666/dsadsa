@@ -2,8 +2,8 @@
 // 26.2 in this port's authoring environment (no internet access there to check newer releases).
 // If the build fails resolving Minecraft 26.2 mappings/metadata, bump these plugin versions first.
 plugins {
-    id 'dev.architectury.loom' version '1.11.458' apply false
-    id 'architectury-plugin' version '3.4.164'
+    id 'dev.architectury.loom' version '1.13.467' apply false
+    id 'architectury-plugin' version '3.5'
     id 'com.gradleup.shadow' version '8.3.6' apply false
     id 'me.modmuss50.mod-publish-plugin' version '1.1.0'
 }

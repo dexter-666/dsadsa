@@ -13,15 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # GeckoLib 5.5.5 requires Java 25 for compilation, but Gradle 8.14 cannot
-      # RUN on JDK 25 (Groovy ASM does not support class file major version 69).
-      # Fix: install JDK 24 as the Gradle daemon JVM, and let the Java toolchain
-      # (configured in build.gradle) auto-provision JDK 25 for compilation.
-      - name: Set up JDK 24 (Gradle daemon)
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '24'
+          java-version: '25'
           cache: gradle
 
       - name: Grant execute permission for gradlew
